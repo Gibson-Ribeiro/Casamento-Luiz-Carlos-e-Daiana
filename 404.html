@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex,nofollow" />
+    <title>Redirecionando | Luiz Carlos & Daiana</title>
+    <script>
+      const base = `${location.origin}${location.pathname
+        .split("/")
+        .slice(0, -1)
+        .join("/")}/`;
+      const url = new URL(base);
+      url.search = location.search;
+      url.hash = location.hash;
+      location.replace(url.toString());
+    </script>
+  </head>
+  <body>
+    <p>Redirecionando para o convite...</p>
+  </body>
+</html>
