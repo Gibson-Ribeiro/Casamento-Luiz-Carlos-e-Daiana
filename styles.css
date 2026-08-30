@@ -969,7 +969,19 @@ summary {
   box-shadow: var(--shadow);
 }
 
-.music-control button {
+.music-control[hidden],
+.music-chip[hidden] {
+  display: none;
+}
+
+.music-control__main {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.music-control__play,
+.music-chip {
   min-height: 44px;
   border: 0;
   border-radius: var(--radius);
@@ -978,14 +990,38 @@ summary {
   font-weight: 800;
 }
 
-.music-control label {
+.music-control__play {
+  padding: 0 1rem;
+}
+
+.music-control__hide {
+  width: 2.4rem;
+  min-height: 44px;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: rgba(255, 253, 248, 0.78);
+  color: var(--plum);
+  font-weight: 800;
+}
+
+.music-control__volume {
   gap: 0.15rem;
 }
 
-.music-control span {
+.music-control__volume span,
+.music-control__status {
   grid-column: 1 / -1;
   color: var(--muted);
   font-size: 0.78rem;
+}
+
+.music-chip {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 25;
+  padding: 0 1rem;
+  box-shadow: var(--shadow);
 }
 
 .toast {
@@ -1315,12 +1351,15 @@ th {
     flex-direction: column;
   }
 
-  .countdown-grid,
   .rsvp-counts,
   .form-grid,
   .table-tools,
   .companions-box {
     grid-template-columns: 1fr;
+  }
+
+  .countdown-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -1354,11 +1393,41 @@ th {
     font-size: 1.7rem;
   }
 
-  .countdown-grid,
   .note-grid,
   .metrics-grid,
   .moderation-grid {
     grid-template-columns: 1fr;
+  }
+
+  .countdown-section {
+    padding-top: 2.4rem;
+    padding-bottom: 2.8rem;
+  }
+
+  .countdown-section .section-heading {
+    margin-bottom: 1rem;
+  }
+
+  .countdown-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.55rem;
+  }
+
+  .countdown-grid article {
+    min-height: 5.2rem;
+    padding: 0.8rem 0.45rem;
+    display: grid;
+    place-items: center;
+    align-content: center;
+  }
+
+  .countdown-grid strong {
+    font-size: 2.45rem;
+  }
+
+  .countdown-grid span {
+    font-size: 0.8rem;
+    line-height: 1.2;
   }
 
   .inline-form {
@@ -1370,9 +1439,45 @@ th {
   }
 
   .music-control {
-    left: 0.5rem;
-    right: 0.5rem;
-    bottom: 0.5rem;
-    grid-template-columns: auto 1fr;
+    left: auto;
+    right: 0.75rem;
+    bottom: calc(0.75rem + env(safe-area-inset-bottom));
+    grid-template-columns: 1fr;
+    gap: 0;
+    max-width: calc(100% - 1.5rem);
+    padding: 0.35rem;
+    border-radius: 999px;
+  }
+
+  .music-control__main {
+    gap: 0.35rem;
+  }
+
+  .music-control__play,
+  .music-control__hide,
+  .music-chip {
+    min-height: 40px;
+    border-radius: 999px;
+    font-size: 0.92rem;
+  }
+
+  .music-control__play {
+    padding: 0 0.85rem;
+  }
+
+  .music-control__hide {
+    width: 2.3rem;
+    padding: 0;
+  }
+
+  .music-control__volume,
+  .music-control__status {
+    display: none;
+  }
+
+  .music-chip {
+    right: 0.75rem;
+    bottom: calc(0.75rem + env(safe-area-inset-bottom));
+    padding: 0 0.85rem;
   }
 }

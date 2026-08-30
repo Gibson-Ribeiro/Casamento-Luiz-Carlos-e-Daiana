@@ -71,6 +71,10 @@ let musicState = {
   visible: false,
   playing: false,
   failed: false,
+  hidden:
+    typeof localStorage === "undefined"
+      ? false
+      : localStorage.getItem("ld-music-hidden") === "true",
   volume: readStoredMusicVolume(),
 };
 
@@ -1270,13 +1274,19 @@ function renderFooter() {
 function renderMusicControl() {
   return `
     <aside class="music-control" data-music-control aria-label="Controle da música">
-      <button type="button" data-action="alternar-musica" aria-label="Pausar ou tocar música">Tocar</button>
-      <label>
+      <div class="music-control__main">
+        <button class="music-control__play" type="button" data-action="alternar-musica" aria-label="Pausar ou tocar música">
+          <span data-music-button-label>Tocar</span>
+        </button>
+        <button class="music-control__hide" type="button" data-action="ocultar-musica" aria-label="Ocultar controle de música">X</button>
+      </div>
+      <label class="music-control__volume">
         <span>Volume</span>
         <input type="range" min="0" max="1" step="0.05" value="${musicState.volume}" data-action="volume-musica" />
       </label>
-      <span data-music-status></span>
+      <span class="music-control__status" data-music-status></span>
     </aside>
+    <button class="music-chip" type="button" data-music-chip data-action="mostrar-musica" aria-label="Mostrar controle de música" hidden>Som</button>
   `;
 }
 
@@ -1326,8 +1336,11 @@ function fadeAudioTo(target) {
 
 function updateMusicControl() {
   const control = document.querySelector("[data-music-control]");
+  const chip = document.querySelector("[data-music-chip]");
   if (!control || !guestArea?.settings?.music_url) return;
-  const button = control.querySelector('[data-action="alternar-musica"]');
+  control.hidden = musicState.hidden;
+  if (chip) chip.hidden = !musicState.hidden;
+  const button = control.querySelector("[data-music-button-label]");
   const status = control.querySelector("[data-music-status]");
   if (button) button.textContent = musicState.playing ? "Pausar" : "Tocar";
   if (status) {
@@ -1350,6 +1363,14 @@ async function toggleMusic() {
   }
   audio.pause();
   musicState.playing = false;
+  updateMusicControl();
+}
+
+function setMusicControlHidden(hidden) {
+  musicState.hidden = hidden;
+  if (typeof localStorage !== "undefined") {
+    localStorage.setItem("ld-music-hidden", String(hidden));
+  }
   updateMusicControl();
 }
 
@@ -1671,6 +1692,8 @@ function bindEvents() {
     if (action === "copiar-pix") await copyPix(button);
     if (action === "enviar-mensagem") await submitMessage(button);
     if (action === "alternar-musica") await toggleMusic();
+    if (action === "ocultar-musica") setMusicControlHidden(true);
+    if (action === "mostrar-musica") setMusicControlHidden(false);
     if (action === "volume-musica") {
       musicState.volume = Number(button.value || 0.35);
       localStorage.setItem("ld-music-volume", String(musicState.volume));
