@@ -44,6 +44,8 @@ const DEMO_TOKEN = "lucas-fernanda-demo";
 const GALLERY_BUCKET = "wedding-gallery";
 const FLORAL_FRAME = new URL("./assets/moldura-floral-convite.png", import.meta.url).href;
 const ICS_FILE = new URL("./assets/luiz-carlos-daiana.ics", import.meta.url).href;
+const DEFAULT_MUSIC_PATH = "assets/audio/jesus-meu-esposo-colo-de-deus-violin.mp3";
+const DEFAULT_MUSIC_URL = new URL(`./${DEFAULT_MUSIC_PATH}`, import.meta.url).href;
 const INVITATION_ROUTE = new URL("./convite/", import.meta.url).href;
 const ADMIN_ROUTE = new URL("./admin/", import.meta.url).href;
 const MAX_GALLERY_FILE_SIZE = 12 * 1024 * 1024;
@@ -69,10 +71,7 @@ let musicState = {
   visible: false,
   playing: false,
   failed: false,
-  volume:
-    typeof localStorage === "undefined"
-      ? 0.35
-      : Number(localStorage.getItem("ld-music-volume") || "0.35"),
+  volume: readStoredMusicVolume(),
 };
 
 export function calculateCountdown(targetIso, nowMs = Date.now()) {
@@ -143,6 +142,16 @@ function safeUrl(value = "") {
   } catch {
     return "";
   }
+}
+
+function readStoredMusicVolume() {
+  if (typeof localStorage === "undefined") return 0.35;
+  const volume = Number(localStorage.getItem("ld-music-volume") || "0.35");
+  return Number.isFinite(volume) && volume >= 0 && volume <= 1 ? volume : 0.35;
+}
+
+function musicUrlFromSettings(settings = {}) {
+  return safeUrl(settings.music_url || DEFAULT_MUSIC_PATH) || DEFAULT_MUSIC_URL;
 }
 
 function storyPhoto(index) {
@@ -288,7 +297,7 @@ function prefersReducedMotion() {
 
 function defaultContent() {
   return {
-    music_url: "",
+    music_url: DEFAULT_MUSIC_PATH,
     gallery_enabled: false,
     gallery_visible_after: "2026-11-28T20:00:00-03:00",
     pix_key: "",
@@ -655,6 +664,7 @@ async function openInvitation() {
   busy = true;
   opened = true;
   document.body.classList.add("invitation-opened");
+  const musicStart = startMusic();
 
   try {
     await rpc("register_invitation_open", { p_token: invitationToken });
@@ -663,6 +673,7 @@ async function openInvitation() {
   }
 
   await loadGuestArea();
+  await musicStart;
   await startMusic();
   busy = false;
 }
@@ -690,6 +701,7 @@ async function loadGuestArea({ keepScroll = false } = {}) {
 
 function normalizeArea(data) {
   const content = { ...defaultContent(), ...(data.settings || {}) };
+  content.music_url = musicUrlFromSettings(content);
   content.story_chapters = normalizeStoryChapters(content.story_chapters);
   return {
     ...data,
@@ -706,7 +718,8 @@ function renderSite() {
   const content = guestArea.settings;
   const rsvp = guestArea.rsvp;
   const pix = guestArea.pix;
-  const musicUrl = content.music_url || "";
+  const musicUrl = musicUrlFromSettings(content);
+  content.music_url = musicUrl;
 
   musicState.visible = Boolean(musicUrl);
 
@@ -1268,13 +1281,14 @@ function renderMusicControl() {
 }
 
 async function startMusic() {
-  const url = guestArea?.settings?.music_url || "";
+  const url = musicUrlFromSettings(guestArea?.settings || {});
   if (!url) return;
 
-  if (!audio) {
+  if (!audio || audio.src !== url) {
+    if (audio) audio.pause();
     audio = new Audio(url);
     audio.loop = true;
-    audio.preload = "metadata";
+    audio.preload = "auto";
     audio.volume = 0;
   }
 
