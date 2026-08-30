@@ -1,5 +1,5 @@
-const SUPABASE_URL = "COLE_AQUI_A_URL_DO_SUPABASE";
-const SUPABASE_PUBLISHABLE_KEY = "COLE_AQUI_A_CHAVE_PUBLICA_PUBLISHABLE";
+const SUPABASE_URL = "https://lovkstiiehvhdaefjktl.supabase.co";
+const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_JC6-abmrqPfpGkBdSHbj0w_VsD2-TEu";
 
 let supabaseClientPromise = null;
 
