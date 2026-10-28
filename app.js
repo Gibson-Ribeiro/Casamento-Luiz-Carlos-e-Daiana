@@ -10,7 +10,6 @@ export const WEDDING = {
   city: "Timbó, SC",
   timezone: "America/Sao_Paulo",
   eventStartsAt: "2026-11-28T15:00:00-03:00",
-  rsvpDeadline: "2026-10-25T23:59:59-03:00",
   ceremony: {
     title: "Capela São Roque",
     label: "Cerimônia",
@@ -91,12 +90,7 @@ export function calculateCountdown(targetIso, nowMs = Date.now()) {
   };
 }
 
-export function validateRsvpPayload(payload, guest, nowMs = Date.now()) {
-  const deadlineMs = new Date(WEDDING.rsvpDeadline).getTime();
-  if (nowMs > deadlineMs) {
-    return "O prazo de confirmação já encerrou.";
-  }
-
+export function validateRsvpPayload(payload, guest) {
   if (!payload.consent) {
     return "Confirme o consentimento para armazenarmos sua resposta.";
   }
@@ -342,7 +336,7 @@ function defaultContent() {
       {
         question: "Como alterar a confirmação?",
         answer:
-          "Você pode voltar ao seu link personalizado e editar sua resposta até 25 de outubro de 2026.",
+          "Você pode voltar ao seu link personalizado e editar sua resposta a qualquer momento.",
       },
       {
         question: "Como faço para presentear os noivos?",
@@ -351,7 +345,7 @@ function defaultContent() {
       },
       {
         question: "Até quando posso confirmar presença?",
-        answer: "As confirmações ficam abertas até 25 de outubro de 2026.",
+        answer: "As confirmações continuam abertas, inclusive após a data inicialmente prevista.",
       },
     ],
   };
@@ -930,37 +924,31 @@ function renderEvents(content) {
   `;
 }
 
-function renderRsvp(rsvp, guest) {
+export function renderRsvp(rsvp, guest) {
   const isDeclined = rsvp?.status === "declined";
   const attending = rsvp?.status === "attending" || !rsvp;
   const adults = rsvp?.adults_count ?? Math.min(Number(guest.max_adults || 1), 1);
   const children = rsvp?.children_count ?? 0;
-  const deadlinePassed = Date.now() > new Date(WEDDING.rsvpDeadline).getTime();
 
   return `
     <section class="section rsvp-section" id="rsvp">
       <div class="section-heading">
         <p class="eyebrow">Confirmação de presença</p>
-        <h2>Responda até 25 de outubro de 2026</h2>
+        <h2>Confirme sua presença</h2>
         <p>
           Este convite permite até ${Number(guest.max_adults || 0)} adulto(s) e
           ${Number(guest.max_children || 0)} criança(s).
         </p>
       </div>
-      ${
-        deadlinePassed
-          ? `<div class="notice notice--warn">O prazo de alteração da confirmação foi encerrado.</div>`
-          : ""
-      }
       <form class="rsvp-form" data-form="rsvp">
         <fieldset class="segmented-field">
           <legend>Resposta</legend>
           <label>
-            <input type="radio" name="status" value="attending" ${attending ? "checked" : ""} ${deadlinePassed ? "disabled" : ""} />
+            <input type="radio" name="status" value="attending" ${attending ? "checked" : ""} />
             <span>Estarei presente</span>
           </label>
           <label>
-            <input type="radio" name="status" value="declined" ${isDeclined ? "checked" : ""} ${deadlinePassed ? "disabled" : ""} />
+            <input type="radio" name="status" value="declined" ${isDeclined ? "checked" : ""} />
             <span>Não poderei comparecer</span>
           </label>
         </fieldset>
@@ -968,11 +956,11 @@ function renderRsvp(rsvp, guest) {
         <div class="rsvp-counts" data-rsvp-attending>
           <label>
             <span>Adultos</span>
-            <input name="adults_count" type="number" min="0" max="${Number(guest.max_adults || 0)}" value="${Number(adults)}" inputmode="numeric" ${deadlinePassed ? "disabled" : ""} />
+            <input name="adults_count" type="number" min="0" max="${Number(guest.max_adults || 0)}" value="${Number(adults)}" inputmode="numeric" />
           </label>
           <label>
             <span>Crianças</span>
-            <input name="children_count" type="number" min="0" max="${Number(guest.max_children || 0)}" value="${Number(children)}" inputmode="numeric" ${deadlinePassed ? "disabled" : ""} />
+            <input name="children_count" type="number" min="0" max="${Number(guest.max_children || 0)}" value="${Number(children)}" inputmode="numeric" />
           </label>
         </div>
 
@@ -980,22 +968,22 @@ function renderRsvp(rsvp, guest) {
 
         <label>
           <span>Restrições alimentares</span>
-          <textarea name="dietary_restrictions" rows="3" ${deadlinePassed ? "disabled" : ""}>${escapeHtml(rsvp?.dietary_restrictions || "")}</textarea>
+          <textarea name="dietary_restrictions" rows="3">${escapeHtml(rsvp?.dietary_restrictions || "")}</textarea>
         </label>
         <label>
           <span>Telefone ou WhatsApp</span>
-          <input name="phone" type="tel" autocomplete="tel" value="${escapeHtml(rsvp?.phone || "")}" ${deadlinePassed ? "disabled" : ""} />
+          <input name="phone" type="tel" autocomplete="tel" value="${escapeHtml(rsvp?.phone || "")}" />
         </label>
         <label>
           <span>Mensagem aos noivos</span>
-          <textarea name="message" rows="4" maxlength="900" ${deadlinePassed ? "disabled" : ""}>${escapeHtml(rsvp?.message || "")}</textarea>
+          <textarea name="message" rows="4" maxlength="900">${escapeHtml(rsvp?.message || "")}</textarea>
         </label>
         <label class="checkbox-line">
-          <input name="consent" type="checkbox" ${rsvp?.consent_at ? "checked" : ""} ${deadlinePassed ? "disabled" : ""} />
+          <input name="consent" type="checkbox" ${rsvp?.consent_at ? "checked" : ""} />
           <span>Autorizo o armazenamento dos dados desta confirmação para organização do casamento.</span>
         </label>
         <div class="form-feedback" data-form-feedback aria-live="polite"></div>
-        <button class="button button--primary" type="submit" ${deadlinePassed ? "disabled" : ""}>
+        <button class="button button--primary" type="submit">
           ${rsvp ? "Atualizar confirmação" : "Enviar confirmação"}
         </button>
       </form>

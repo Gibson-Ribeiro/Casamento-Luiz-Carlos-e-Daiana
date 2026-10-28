@@ -1,6 +1,6 @@
 import { getSupabaseClient, isSupabaseConfigured } from "./supabaseClient.js";
 
-const adminApp = document.querySelector("#adminApp");
+const adminApp = typeof document === "undefined" ? null : document.querySelector("#adminApp");
 const INVITATION_ROUTE = new URL("./convite/", import.meta.url).href;
 const GALLERY_BUCKET = "wedding-gallery";
 const STORY_PHOTOS = [
@@ -292,10 +292,50 @@ function buildDashboardFromDemo() {
   };
 }
 
-async function demoRpc(name, args = {}) {
+export function validateManualRsvpCounts(adults, children, guest) {
+  if (!Number.isInteger(adults) || !Number.isInteger(children) || adults < 0 || children < 0) {
+    return "Informe quantidades inteiras e não negativas.";
+  }
+  if (adults + children < 1) return "Informe ao menos uma pessoa confirmada.";
+  if (adults > Number(guest.max_adults || 0) || children > Number(guest.max_children || 0)) {
+    return "A quantidade informada ultrapassa o limite deste convite.";
+  }
+  return "";
+}
+
+export async function demoRpc(name, args = {}) {
   const state = demoState();
 
   if (name === "admin_get_dashboard") return buildDashboardFromDemo();
+
+  if (name === "admin_confirm_rsvp") {
+    const guest = state.guests.find((item) => item.id === args.p_guest_id && item.active);
+    if (!guest) return { ok: false, message: "Convite ativo não encontrado." };
+    const adults = Number(args.p_adults_count);
+    const children = Number(args.p_children_count);
+    const error = validateManualRsvpCounts(adults, children, guest);
+    if (error) return { ok: false, message: error };
+    const existing = state.rsvps.find((item) => item.guest_id === guest.id);
+    const now = new Date().toISOString();
+    const next = {
+      id: existing?.id || crypto.randomUUID(),
+      guest_id: guest.id,
+      companion_names: [],
+      consent_at: null,
+      ...existing,
+      status: "attending",
+      adults_count: adults,
+      children_count: children,
+      submitted_at: existing?.submitted_at || now,
+      changed_at: existing ? now : null,
+      updated_at: now,
+      revision: Number(existing?.revision || 0) + 1,
+    };
+    if (existing) Object.assign(existing, next);
+    else state.rsvps.push(next);
+    saveDemoState(state);
+    return { ok: true, rsvp: next };
+  }
 
   if (name === "admin_save_guest") {
     const id = args.p_guest_id || crypto.randomUUID();
@@ -549,6 +589,7 @@ function renderGuests() {
 
   return `
     <section class="admin-panel">
+      ${renderManualRsvpForm()}
       <form class="stack-form admin-form" data-admin-form="guest">
         <h2>${editing ? "Editar convidado" : "Novo convidado"}</h2>
         <input type="hidden" name="id" value="${escapeHtml(editing?.id || "")}" />
@@ -620,6 +661,7 @@ function renderGuestRow(guest) {
       <td>${guest.invitation_opened_at ? formatDateTime(guest.invitation_opened_at) : "Ainda não abriu"}</td>
       <td>${guest.token_hint ? `...${escapeHtml(guest.token_hint)}` : "Gerado uma única vez"}</td>
       <td class="table-actions">
+        ${renderConfirmRsvpButton(guest)}
         <button type="button" class="table-action" data-admin-action="edit-guest" data-id="${escapeHtml(guest.id)}">Editar</button>
         <button type="button" class="table-action" data-admin-action="regenerate-token" data-id="${escapeHtml(guest.id)}">Gerar token</button>
         <button type="button" class="table-action" data-admin-action="copy-whatsapp" data-id="${escapeHtml(guest.id)}" ${link ? "" : "disabled"}>WhatsApp</button>
@@ -639,6 +681,7 @@ function renderRsvps() {
 
   return `
     <section class="admin-panel">
+      ${renderManualRsvpForm()}
       <form class="table-tools" data-admin-form="rsvp-filter">
         <label>
           <span>Status</span>
@@ -668,6 +711,7 @@ function renderRsvps() {
               <th>Restrições</th>
               <th>Telefone</th>
               <th>Atualização</th>
+              <th>Ações</th>
             </tr>
           </thead>
           <tbody>
@@ -686,16 +730,53 @@ function renderRsvps() {
                           <td>${escapeHtml(rsvp.dietary_restrictions || "")}</td>
                           <td>${escapeHtml(rsvp.phone || "")}</td>
                           <td>${formatDateTime(rsvp.changed_at || rsvp.submitted_at)}</td>
+                          <td class="table-actions">${renderConfirmRsvpButton(guest)}</td>
                         </tr>
                       `;
                     })
                     .join("")
-                : `<tr><td colspan="8">Nenhuma confirmação neste filtro.</td></tr>`
+                : `<tr><td colspan="9">Nenhuma confirmação neste filtro.</td></tr>`
             }
           </tbody>
         </table>
       </div>
     </section>
+  `;
+}
+
+function renderConfirmRsvpButton(guest) {
+  return `<button type="button" class="table-action" data-admin-action="confirm-rsvp" data-id="${escapeHtml(guest.id)}" ${guest.active ? "" : 'disabled title="Ative o convite para confirmar presença"'}>${guest.rsvp?.status === "attending" ? "Editar presença" : "Confirmar presença"}</button>`;
+}
+
+function renderManualRsvpForm() {
+  if (activeEdit?.type !== "rsvp") return "";
+  const guest = guestById(activeEdit.id);
+  if (!guest) return "";
+  const attending = guest.rsvp?.status === "attending";
+  const adults = attending ? guest.rsvp.adults_count : Math.min(Number(guest.max_adults || 0), 1);
+  const children = attending ? guest.rsvp.children_count : (adults ? 0 : 1);
+  return `
+    <form class="stack-form admin-form" data-admin-form="manual-rsvp">
+      <h2>Confirmar presença: ${escapeHtml(guest.display_name)}</h2>
+      <p>Este convite permite até ${Number(guest.max_adults || 0)} adulto(s) e ${Number(guest.max_children || 0)} criança(s).</p>
+      <input type="hidden" name="guest_id" value="${escapeHtml(guest.id)}" />
+      <div class="form-grid">
+        <label>
+          <span>Adultos confirmados</span>
+          <input name="adults_count" type="number" min="0" step="1" max="${Number(guest.max_adults || 0)}" value="${Number(adults)}" required />
+        </label>
+        <label>
+          <span>Crianças confirmadas</span>
+          <input name="children_count" type="number" min="0" step="1" max="${Number(guest.max_children || 0)}" value="${Number(children)}" required />
+        </label>
+      </div>
+      <p class="muted">A presença será registrada pelo administrador. Os demais dados já enviados pelo convidado serão mantidos.</p>
+      <div class="form-feedback" data-manual-rsvp-feedback role="status" aria-live="polite"></div>
+      <div class="button-row">
+        <button class="button button--primary" type="submit">Salvar presença</button>
+        <button class="button button--ghost" type="button" data-admin-action="cancel-edit">Cancelar</button>
+      </div>
+    </form>
   `;
 }
 
@@ -836,6 +917,26 @@ async function handleGuestForm(form) {
   }
 }
 
+async function handleManualRsvpForm(form) {
+  const formData = new FormData(form);
+  const guestId = String(formData.get("guest_id") || "");
+  const guest = guestById(guestId);
+  if (!guest?.active) throw new Error("Convite ativo não encontrado.");
+  const adults = Number(formData.get("adults_count"));
+  const children = Number(formData.get("children_count"));
+  const error = validateManualRsvpCounts(adults, children, guest);
+  if (error) throw new Error(error);
+  const result = await rpc("admin_confirm_rsvp", {
+    p_guest_id: guestId,
+    p_adults_count: adults,
+    p_children_count: children,
+  });
+  if (!result?.ok) throw new Error(result?.message || "Não foi possível confirmar presença.");
+  activeEdit = null;
+  await loadDashboard();
+  showNotice("Presença confirmada.", `${guest.display_name}: ${adults} adulto(s) e ${children} criança(s).`);
+}
+
 async function handleSettingsForm(form) {
   const formData = new FormData(form);
   const settings = {
@@ -973,124 +1074,136 @@ function exportRsvps() {
   downloadCsv("confirmacoes-luiz-carlos-daiana.csv", rows);
 }
 
-adminApp.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const form = event.target;
-  const button = form.querySelector('button[type="submit"]');
-  if (button) button.disabled = true;
+function bindAdminEvents() {
+  adminApp.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.target;
+    const button = form.querySelector('button[type="submit"]');
+    if (button) button.disabled = true;
 
-  try {
-    if (form.dataset.adminForm === "login") await handleLogin(form, button);
-    if (form.dataset.adminForm === "guest") await handleGuestForm(form);
-    if (form.dataset.adminForm === "settings") await handleSettingsForm(form);
-  } catch (error) {
-    showNotice("Não foi possível concluir.", error?.message || "Revise os dados e tente novamente.");
-  } finally {
-    if (button) button.disabled = false;
-  }
-});
-
-adminApp.addEventListener("input", (event) => {
-  if (event.target.closest('[data-admin-form="guest-filter"]')) {
-    filters.guest = event.target.value;
-    renderDashboard();
-  }
-});
-
-adminApp.addEventListener("change", (event) => {
-  if (event.target.closest('[data-admin-form="rsvp-filter"]')) {
-    filters.rsvp = event.target.value;
-    renderDashboard();
-  }
-});
-
-document.addEventListener("click", async (event) => {
-  if (event.target.closest("[data-modal-close]")) {
-    closeModal();
-    return;
-  }
-
-  const tab = event.target.closest("[data-admin-tab]");
-  if (tab) {
-    activeTab = tab.dataset.adminTab;
-    activeEdit = null;
-    renderDashboard();
-    return;
-  }
-
-  const button = event.target.closest("[data-admin-action]");
-  if (!button) return;
-
-  try {
-    const action = button.dataset.adminAction;
-    if (action === "demo-admin") {
-      demoMode = true;
-      await loadDashboard();
+    try {
+      if (form.dataset.adminForm === "login") await handleLogin(form, button);
+      if (form.dataset.adminForm === "guest") await handleGuestForm(form);
+      if (form.dataset.adminForm === "manual-rsvp") await handleManualRsvpForm(form);
+      if (form.dataset.adminForm === "settings") await handleSettingsForm(form);
+    } catch (error) {
+      const feedback = form.querySelector("[data-manual-rsvp-feedback]");
+      if (feedback) feedback.textContent = error?.message || "Revise os dados e tente novamente.";
+      else showNotice("Não foi possível concluir.", error?.message || "Revise os dados e tente novamente.");
+    } finally {
+      if (button) button.disabled = false;
     }
-    if (action === "refresh") await loadDashboard();
-    if (action === "logout") {
-      const client = await getSupabaseClient();
-      await client.auth.signOut();
-      renderLogin();
+  });
+
+  adminApp.addEventListener("input", (event) => {
+    if (event.target.closest('[data-admin-form="guest-filter"]')) {
+      filters.guest = event.target.value;
+      renderDashboard();
     }
-    if (action === "cancel-edit") {
+  });
+
+  adminApp.addEventListener("change", (event) => {
+    if (event.target.closest('[data-admin-form="rsvp-filter"]')) {
+      filters.rsvp = event.target.value;
+      renderDashboard();
+    }
+  });
+
+  document.addEventListener("click", async (event) => {
+    if (event.target.closest("[data-modal-close]")) {
+      closeModal();
+      return;
+    }
+
+    const tab = event.target.closest("[data-admin-tab]");
+    if (tab) {
+      activeTab = tab.dataset.adminTab;
       activeEdit = null;
       renderDashboard();
+      return;
     }
-    if (action === "edit-guest") {
-      activeEdit = { type: "guest", id: button.dataset.id };
-      renderDashboard();
+
+    const button = event.target.closest("[data-admin-action]");
+    if (!button) return;
+
+    try {
+      const action = button.dataset.adminAction;
+      if (action === "demo-admin") {
+        demoMode = true;
+        await loadDashboard();
+      }
+      if (action === "refresh") await loadDashboard();
+      if (action === "logout") {
+        const client = await getSupabaseClient();
+        await client.auth.signOut();
+        renderLogin();
+      }
+      if (action === "cancel-edit") {
+        activeEdit = null;
+        renderDashboard();
+      }
+      if (action === "edit-guest") {
+        activeEdit = { type: "guest", id: button.dataset.id };
+        renderDashboard();
+      }
+      if (action === "confirm-rsvp") {
+        activeEdit = { type: "rsvp", id: button.dataset.id };
+        renderDashboard();
+        const form = document.querySelector('[data-admin-form="manual-rsvp"]');
+        form?.scrollIntoView({ behavior: "smooth", block: "center" });
+        form?.elements.adults_count.focus({ preventScroll: true });
+      }
+      if (action === "toggle-guest") {
+        const result = await rpc("admin_deactivate_guest", {
+          p_guest_id: button.dataset.id,
+          p_active: button.dataset.active === "true",
+        });
+        if (!result?.ok) throw new Error(result?.message || "Não foi possível alterar convidado.");
+        await loadDashboard();
+      }
+      if (action === "regenerate-token") await regenerateToken(button.dataset.id);
+      if (action === "copy-link") {
+        await copyText(guestLink(guestById(button.dataset.id)));
+        showNotice("Link copiado.", "Envie apenas para o convidado correspondente.");
+      }
+      if (action === "copy-whatsapp") {
+        const guest = guestById(button.dataset.id);
+        await copyText(
+          `Olá, ${guest.display_name}! Luiz Carlos e Daiana prepararam este convite especialmente para vocês: ${guestLink(guest)}`
+        );
+        showNotice("Texto copiado.", "Cole no WhatsApp do convidado.");
+      }
+      if (action === "show-qr") await showQr(button.dataset.id);
+      if (action === "download-qr") {
+        const canvas = document.querySelector("[data-qr-canvas]");
+        const link = document.createElement("a");
+        link.download = `${button.dataset.name || "convite"}-qr.png`.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+        link.href = canvas.toDataURL("image/png");
+        link.click();
+      }
+      if (action === "export-guests") exportGuests();
+      if (action === "export-rsvps") exportRsvps();
+      if (action === "moderate-message") {
+        const result = await rpc("admin_moderate_message", {
+          p_message_id: button.dataset.id,
+          p_status: button.dataset.status,
+        });
+        if (!result?.ok) throw new Error(result?.message || "Não foi possível moderar mensagem.");
+        await loadDashboard();
+      }
+      if (action === "moderate-gallery") {
+        const result = await rpc("admin_moderate_gallery_item", {
+          p_gallery_id: button.dataset.id,
+          p_status: button.dataset.status,
+        });
+        if (!result?.ok) throw new Error(result?.message || "Não foi possível moderar foto.");
+        await loadDashboard();
+      }
+    } catch (error) {
+      showNotice("Ação não concluída.", error?.message || "Tente novamente.");
     }
-    if (action === "toggle-guest") {
-      const result = await rpc("admin_deactivate_guest", {
-        p_guest_id: button.dataset.id,
-        p_active: button.dataset.active === "true",
-      });
-      if (!result?.ok) throw new Error(result?.message || "Não foi possível alterar convidado.");
-      await loadDashboard();
-    }
-    if (action === "regenerate-token") await regenerateToken(button.dataset.id);
-    if (action === "copy-link") {
-      await copyText(guestLink(guestById(button.dataset.id)));
-      showNotice("Link copiado.", "Envie apenas para o convidado correspondente.");
-    }
-    if (action === "copy-whatsapp") {
-      const guest = guestById(button.dataset.id);
-      await copyText(
-        `Olá, ${guest.display_name}! Luiz Carlos e Daiana prepararam este convite especialmente para vocês: ${guestLink(guest)}`
-      );
-      showNotice("Texto copiado.", "Cole no WhatsApp do convidado.");
-    }
-    if (action === "show-qr") await showQr(button.dataset.id);
-    if (action === "download-qr") {
-      const canvas = document.querySelector("[data-qr-canvas]");
-      const link = document.createElement("a");
-      link.download = `${button.dataset.name || "convite"}-qr.png`.toLowerCase().replace(/[^a-z0-9]+/g, "-");
-      link.href = canvas.toDataURL("image/png");
-      link.click();
-    }
-    if (action === "export-guests") exportGuests();
-    if (action === "export-rsvps") exportRsvps();
-    if (action === "moderate-message") {
-      const result = await rpc("admin_moderate_message", {
-        p_message_id: button.dataset.id,
-        p_status: button.dataset.status,
-      });
-      if (!result?.ok) throw new Error(result?.message || "Não foi possível moderar mensagem.");
-      await loadDashboard();
-    }
-    if (action === "moderate-gallery") {
-      const result = await rpc("admin_moderate_gallery_item", {
-        p_gallery_id: button.dataset.id,
-        p_status: button.dataset.status,
-      });
-      if (!result?.ok) throw new Error(result?.message || "Não foi possível moderar foto.");
-      await loadDashboard();
-    }
-  } catch (error) {
-    showNotice("Ação não concluída.", error?.message || "Tente novamente.");
-  }
-});
+  });
+}
 
 async function boot() {
   if (!isSupabaseConfigured()) {
@@ -1112,4 +1225,7 @@ async function boot() {
   }
 }
 
-boot();
+if (adminApp) {
+  bindAdminEvents();
+  boot();
+}
